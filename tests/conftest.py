@@ -2,7 +2,7 @@ import os
 
 # Set dummy env vars before any bot imports
 os.environ.setdefault("BOT_TOKEN", "test-token")
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("GIGACHAT_CREDENTIALS", "test-key")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
@@ -34,7 +34,7 @@ async def session(engine):
 
 
 @pytest.fixture
-def mock_openai():
+def mock_gigachat():
     mock_message = MagicMock()
     mock_message.content = (
         '{"translation": "пример", '
@@ -47,9 +47,10 @@ def mock_openai():
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
 
-    with patch(
-        "bot.services.llm.client.chat.completions.create",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ) as mock:
+    mock_client = AsyncMock()
+    mock_client.achat = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("bot.services.llm.GigaChat", return_value=mock_client) as mock:
         yield mock

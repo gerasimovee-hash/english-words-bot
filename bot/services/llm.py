@@ -2,13 +2,12 @@ import json
 import logging
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
+from gigachat import GigaChat
+from gigachat.models import Chat, Messages, MessagesRole
 
 from bot.config import settings
 
 logger = logging.getLogger(__name__)
-
-client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 EXPLAIN_PROMPT = """\
 You are an English language tutor helping a Russian-speaking student.
@@ -47,17 +46,30 @@ class WordExplanation:
 
 
 async def explain_word(word: str) -> WordExplanation:
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": EXPLAIN_PROMPT},
-            {"role": "user", "content": word},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.3,
-    )
+    async with GigaChat(
+        credentials=settings.gigachat_credentials,
+        model="GigaChat-2-Max",
+        scope="GIGACHAT_API_PERS",
+        verify_ssl_certs=False,
+    ) as client:
+        response = await client.achat(
+            Chat(
+                messages=[
+                    Messages(role=MessagesRole.SYSTEM, content=EXPLAIN_PROMPT),
+                    Messages(role=MessagesRole.USER, content=word),
+                ],
+                temperature=0.3,
+            )
+        )
 
     content = response.choices[0].message.content or "{}"
+
+    # Strip markdown code fences if present
+    if content.startswith("```"):
+        lines = content.split("\n")
+        lines = [line for line in lines if not line.startswith("```")]
+        content = "\n".join(lines)
+
     data = json.loads(content)
 
     translation = data.get("translation", "—")

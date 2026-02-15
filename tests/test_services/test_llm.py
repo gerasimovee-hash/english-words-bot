@@ -1,7 +1,7 @@
 from bot.services.llm import explain_word, format_explanation
 
 
-async def test_explain_word(mock_openai):
+async def test_explain_word(mock_gigachat):
     result = await explain_word("example")
 
     assert result.translation == "пример"
@@ -9,7 +9,7 @@ async def test_explain_word(mock_openai):
     assert len(result.examples) == 1
     assert len(result.collocations) == 1
     assert "example" in result.raw_text
-    mock_openai.assert_called_once()
+    mock_gigachat.assert_called_once()
 
 
 def test_format_explanation():
