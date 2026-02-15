@@ -63,14 +63,7 @@ async def explain_word(word: str) -> WordExplanation:
         )
 
     content = response.choices[0].message.content or "{}"
-
-    # Strip markdown code fences if present
-    if content.startswith("```"):
-        lines = content.split("\n")
-        lines = [line for line in lines if not line.startswith("```")]
-        content = "\n".join(lines)
-
-    data = json.loads(content)
+    data = _parse_json(content)
 
     translation = data.get("translation", "—")
     meanings = data.get("meanings", [])
@@ -116,3 +109,34 @@ def format_explanation(
             lines.append(f"  • {col.get('en', '')} — {col.get('ru', '')}")
 
     return "\n".join(lines)
+
+
+def _parse_json(text: str) -> dict:
+    """Extract and parse JSON from LLM response, handling markdown fences and extra text."""
+    # Strip markdown code fences
+    if "```" in text:
+        lines = text.split("\n")
+        inside = False
+        json_lines = []
+        for line in lines:
+            if line.strip().startswith("```"):
+                inside = not inside
+                continue
+            if inside:
+                json_lines.append(line)
+        if json_lines:
+            text = "\n".join(json_lines)
+
+    # Try parsing as-is first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Find the first { and last } to extract JSON object
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        return json.loads(text[start : end + 1])
+
+    return {}
