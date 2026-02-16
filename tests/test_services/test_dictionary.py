@@ -6,6 +6,7 @@ from bot.services.dictionary import (
     get_word_count,
     get_words,
     get_words_for_review,
+    update_user_score,
     update_word_review,
 )
 
@@ -14,6 +15,7 @@ async def test_get_or_create_user(session):
     user = await get_or_create_user(session, telegram_id=12345)
     assert user.telegram_id == 12345
     assert user.id is not None
+    assert user.score == 0
 
     # Should return existing user
     same_user = await get_or_create_user(session, telegram_id=12345)
@@ -24,13 +26,28 @@ async def test_add_and_get_words(session):
     user = await get_or_create_user(session, telegram_id=111)
 
     await add_word(session, user.id, "hello", "привет", "greeting")
-    await add_word(session, user.id, "world", "мир", "the earth")
+    await add_word(session, user.id, "world", "мир", "the earth", translations=["мир", "свет"])
 
     words = await get_words(session, user.id)
     assert len(words) == 2
 
     count = await get_word_count(session, user.id)
     assert count == 2
+
+
+async def test_add_word_with_translations(session):
+    user = await get_or_create_user(session, telegram_id=112)
+    word = await add_word(
+        session, user.id, "run", "бежать", "", translations=["бежать", "бегать", "работать"]
+    )
+    assert word.translations == ["бежать", "бегать", "работать"]
+    assert word.translation == "бежать"
+
+
+async def test_add_word_default_translations(session):
+    user = await get_or_create_user(session, telegram_id=113)
+    word = await add_word(session, user.id, "cat", "кот", "")
+    assert word.translations == ["кот"]
 
 
 async def test_delete_word(session):
@@ -74,14 +91,37 @@ async def test_get_words_for_review(session):
     assert len(words) == 2
 
 
+async def test_get_words_for_review_with_exclude(session):
+    user = await get_or_create_user(session, telegram_id=667)
+    w1 = await add_word(session, user.id, "red", "красный", "")
+    await add_word(session, user.id, "blue", "синий", "")
+
+    words = await get_words_for_review(session, user.id, limit=5, exclude_word_ids=[w1.id])
+    assert len(words) == 1
+    assert words[0].word == "blue"
+
+
+async def test_update_user_score(session):
+    user = await get_or_create_user(session, telegram_id=668)
+    assert user.score == 0
+
+    new_score = await update_user_score(session, user.id, 10)
+    assert new_score == 10
+
+    new_score = await update_user_score(session, user.id, 15)
+    assert new_score == 25
+
+
 async def test_get_stats(session):
     user = await get_or_create_user(session, telegram_id=777)
     word = await add_word(session, user.id, "sun", "солнце", "")
     await update_word_review(session, word.id, is_correct=True)
     await update_word_review(session, word.id, is_correct=False)
+    await update_user_score(session, user.id, 10)
 
     stats = await get_stats(session, user.id)
     assert stats["total_words"] == 1
     assert stats["total_reviews"] == 2
     assert stats["total_correct"] == 1
     assert stats["accuracy"] == 50.0
+    assert stats["score"] == 10

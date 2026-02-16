@@ -116,5 +116,6 @@ async def cmd_stats(message: Message, session: AsyncSession) -> None:
         f"Слов в словаре: {stats['total_words']}\n"
         f"Всего повторений: {stats['total_reviews']}\n"
         f"Правильных ответов: {stats['total_correct']}\n"
-        f"Точность: {stats['accuracy']}%"
+        f"Точность: {stats['accuracy']}%\n"
+        f"Очки: {stats['score']}"
     )

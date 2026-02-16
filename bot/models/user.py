@@ -15,6 +15,8 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    score: Mapped[int] = mapped_column(default=0)
+
     words: Mapped[list["Word"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )

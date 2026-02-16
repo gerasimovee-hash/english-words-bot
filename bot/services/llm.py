@@ -14,14 +14,20 @@ You are an English language tutor helping a Russian-speaking student.
 The student encountered an unfamiliar English word or phrase while reading.
 
 Given the word/phrase, provide:
-1. "translation" — the most common Russian translation(s)
-2. "meanings" — a list of different meanings with short explanations in Russian
-3. "examples" — 2-3 example sentences in English with Russian translations
-4. "collocations" — common collocations and fixed expressions that use this word, with translations
+1. "corrected_word" — if the word contains a typo or spelling mistake, return
+   the corrected version. If the spelling is correct, return the word as-is.
+2. "translation" — the most common Russian translation
+3. "translations" — a list of 2-4 different Russian translations (synonyms),
+   from most common to least common
+4. "meanings" — a list of different meanings with short explanations in Russian
+5. "examples" — 2-3 example sentences in English with Russian translations
+6. "collocations" — common collocations and fixed expressions that use this word, with translations
 
 Respond ONLY with valid JSON in this exact format:
 {
+  "corrected_word": "corrected spelling or same word",
   "translation": "основной перевод",
+  "translations": ["перевод 1", "перевод 2", "перевод 3"],
   "meanings": [
     {"meaning": "значение 1", "explanation": "пояснение на русском"},
     {"meaning": "значение 2", "explanation": "пояснение на русском"}
@@ -39,6 +45,8 @@ Respond ONLY with valid JSON in this exact format:
 @dataclass
 class WordExplanation:
     translation: str
+    translations: list[str]
+    corrected_word: str | None
     meanings: list[dict[str, str]]
     examples: list[dict[str, str]]
     collocations: list[dict[str, str]]
@@ -66,14 +74,26 @@ async def explain_word(word: str) -> WordExplanation:
     data = _parse_json(content)
 
     translation = data.get("translation", "—")
+    translations = data.get("translations", [translation])
+    if not translations:
+        translations = [translation]
+    corrected_word_raw = data.get("corrected_word", word)
+    corrected_word = (
+        corrected_word_raw
+        if corrected_word_raw and corrected_word_raw.lower() != word.lower()
+        else None
+    )
     meanings = data.get("meanings", [])
     examples = data.get("examples", [])
     collocations = data.get("collocations", [])
 
-    raw_text = format_explanation(word, translation, meanings, examples, collocations)
+    display_word = corrected_word if corrected_word else word
+    raw_text = format_explanation(display_word, translation, meanings, examples, collocations)
 
     return WordExplanation(
         translation=translation,
+        translations=translations,
+        corrected_word=corrected_word,
         meanings=meanings,
         examples=examples,
         collocations=collocations,

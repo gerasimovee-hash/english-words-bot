@@ -18,3 +18,22 @@ def save_word_keyboard(word: str) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def correction_keyboard(corrected: str, original: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"Да, {corrected}",
+                    callback_data=f"correct_yes:{corrected[:40]}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"Нет, я имел в виду {original}",
+                    callback_data=f"correct_no:{original[:40]}",
+                ),
+            ],
+        ]
+    )

@@ -4,7 +4,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.keyboards.word import save_word_keyboard
+from bot.keyboards.word import correction_keyboard, save_word_keyboard
 from bot.services.dictionary import add_word, get_or_create_user
 from bot.services.llm import explain_word
 
@@ -34,12 +34,57 @@ async def handle_word(message: Message, session: AsyncSession) -> None:
         return
 
     _pending[telegram_id] = {
-        "word": word,
+        "word": explanation.corrected_word or word,
+        "original_word": word,
         "translation": explanation.translation,
+        "translations": explanation.translations,
         "explanation": explanation.raw_text,
     }
 
+    # If spell-check detected a correction, ask user first
+    if explanation.corrected_word:
+        await message.answer(
+            f"Возможно, вы имели в виду <b>{explanation.corrected_word}</b>?",
+            reply_markup=correction_keyboard(explanation.corrected_word, word),
+        )
+        return
+
     await message.answer(explanation.raw_text, reply_markup=save_word_keyboard(word))
+
+
+@router.callback_query(F.data.startswith("correct_yes:"))
+async def accept_correction(callback: CallbackQuery) -> None:
+    """User accepts the spelling correction."""
+    telegram_id = callback.from_user.id
+    pending = _pending.get(telegram_id)
+    if pending is None:
+        await callback.answer("Устарело.", show_alert=True)
+        return
+
+    # Word is already set to corrected version in _pending
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        pending["explanation"],
+        reply_markup=save_word_keyboard(pending["word"]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("correct_no:"))
+async def reject_correction(callback: CallbackQuery) -> None:
+    """User rejects correction, keeps original word."""
+    telegram_id = callback.from_user.id
+    pending = _pending.get(telegram_id)
+    if pending is None:
+        await callback.answer("Устарело.", show_alert=True)
+        return
+
+    # Revert to original word
+    pending["word"] = pending["original_word"]
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        pending["explanation"],
+        reply_markup=save_word_keyboard(pending["original_word"]),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("save:"))
@@ -58,6 +103,7 @@ async def save_word_callback(callback: CallbackQuery, session: AsyncSession) -> 
         word=pending["word"],
         translation=pending["translation"],
         explanation=pending["explanation"],
+        translations=pending.get("translations"),
     )
 
     await callback.answer("Слово сохранено! ✅")

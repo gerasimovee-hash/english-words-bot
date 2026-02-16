@@ -13,3 +13,11 @@ def quiz_keyboard(word_id: int, options: list[str]) -> InlineKeyboardMarkup:
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def next_question_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Следующий вопрос ➡️", callback_data="quiz_next")]
+        ]
+    )

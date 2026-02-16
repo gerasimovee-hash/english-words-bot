@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.models.base import Base
@@ -13,6 +13,7 @@ class Word(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     word: Mapped[str] = mapped_column(Text)
     translation: Mapped[str] = mapped_column(Text)
+    translations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     explanation: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

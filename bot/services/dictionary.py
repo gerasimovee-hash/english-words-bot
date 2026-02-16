@@ -24,11 +24,13 @@ async def add_word(
     word: str,
     translation: str,
     explanation: str,
+    translations: list[str] | None = None,
 ) -> Word:
     db_word = Word(
         user_id=user_id,
         word=word,
         translation=translation,
+        translations=translations or [translation],
         explanation=explanation,
     )
     session.add(db_word)
@@ -65,17 +67,25 @@ async def delete_word(session: AsyncSession, word_id: int, user_id: int) -> bool
     return True
 
 
-async def get_words_for_review(session: AsyncSession, user_id: int, limit: int = 5) -> list[Word]:
-    """Get words that need review, prioritizing least reviewed and oldest."""
+async def get_words_for_review(
+    session: AsyncSession,
+    user_id: int,
+    limit: int = 5,
+    exclude_word_ids: list[int] | None = None,
+) -> list[Word]:
+    """Get words that need review, prioritizing least reviewed and oldest.
+
+    Uses random() to shuffle words with the same priority so quizzes don't repeat.
+    """
+    query = select(Word).where(Word.user_id == user_id)
+    if exclude_word_ids:
+        query = query.where(Word.id.notin_(exclude_word_ids))
     result = await session.execute(
-        select(Word)
-        .where(Word.user_id == user_id)
-        .order_by(
+        query.order_by(
             Word.last_reviewed_at.asc().nulls_first(),
             Word.correct_count.asc(),
-            Word.created_at.asc(),
-        )
-        .limit(limit)
+            func.random(),
+        ).limit(limit)
     )
     return list(result.scalars().all())
 
@@ -92,6 +102,17 @@ async def update_word_review(session: AsyncSession, word_id: int, is_correct: bo
     await session.commit()
 
 
+async def update_user_score(session: AsyncSession, user_id: int, points: int) -> int:
+    """Add points to user's score. Returns new total score."""
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return 0
+    user.score += points
+    await session.commit()
+    return user.score
+
+
 async def get_stats(session: AsyncSession, user_id: int) -> dict:
     total = await get_word_count(session, user_id)
 
@@ -105,9 +126,14 @@ async def get_stats(session: AsyncSession, user_id: int) -> dict:
     total_reviews = row[0]
     total_correct = row[1]
 
+    user_result = await session.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    score = user.score if user else 0
+
     return {
         "total_words": total,
         "total_reviews": total_reviews,
         "total_correct": total_correct,
         "accuracy": round(total_correct / total_reviews * 100, 1) if total_reviews > 0 else 0,
+        "score": score,
     }

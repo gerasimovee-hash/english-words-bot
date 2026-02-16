@@ -37,7 +37,9 @@ async def session(engine):
 def mock_gigachat():
     mock_message = MagicMock()
     mock_message.content = (
-        '{"translation": "пример", '
+        '{"corrected_word": "example", '
+        '"translation": "пример", '
+        '"translations": ["пример", "образец", "экземпляр"], '
         '"meanings": [{"meaning": "пример", "explanation": "образец"}], '
         '"examples": [{"en": "For example", "ru": "Например"}], '
         '"collocations": [{"en": "set an example", "ru": "подать пример"}]}'
