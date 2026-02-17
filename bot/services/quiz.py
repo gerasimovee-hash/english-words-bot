@@ -15,7 +15,7 @@ STREAK_THRESHOLD = 3
 @dataclass
 class QuizSession:
     user_id: int
-    total_questions: int = 5
+    total_questions: int = 10
     current_question: int = 0
     correct_count: int = 0
     score: int = 0
@@ -31,7 +31,7 @@ def get_session(telegram_id: int) -> QuizSession | None:
     return _quiz_sessions.get(telegram_id)
 
 
-def create_session(telegram_id: int, user_id: int, total_questions: int = 5) -> QuizSession:
+def create_session(telegram_id: int, user_id: int, total_questions: int = 10) -> QuizSession:
     session = QuizSession(user_id=user_id, total_questions=total_questions)
     _quiz_sessions[telegram_id] = session
     return session
