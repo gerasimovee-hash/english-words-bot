@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.main import BUTTON_TEXTS
 from bot.keyboards.word import correction_keyboard, save_word_keyboard
-from bot.services.dictionary import add_word, get_or_create_user
+from bot.services.dictionary import add_word, get_or_create_user, word_exists
 from bot.services.llm import explain_word
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,12 @@ async def handle_word(message: Message, session: AsyncSession) -> None:
         await message.answer("Не удалось получить объяснение. Попробуй ещё раз позже.")
         return
 
+    display_word = explanation.corrected_word or word
+    user = await get_or_create_user(session, telegram_id)
+    already_saved = await word_exists(session, user.id, display_word)
+
     _pending[telegram_id] = {
-        "word": explanation.corrected_word or word,
+        "word": display_word,
         "original_word": word,
         "translation": explanation.translation,
         "translations": explanation.translations,
@@ -44,13 +48,25 @@ async def handle_word(message: Message, session: AsyncSession) -> None:
 
     # If spell-check detected a correction, ask user first
     if explanation.corrected_word:
-        await message.answer(
-            f"Возможно, вы имели в виду <b>{explanation.corrected_word}</b>?",
-            reply_markup=correction_keyboard(explanation.corrected_word, word),
-        )
+        if already_saved:
+            await message.answer(
+                f"Возможно, вы имели в виду <b>{explanation.corrected_word}</b>?\n\n"
+                f"{explanation.raw_text}\n\n"
+                "ℹ️ Это слово уже есть в твоём словаре.",
+            )
+            _pending.pop(telegram_id, None)
+        else:
+            await message.answer(
+                f"Возможно, вы имели в виду <b>{explanation.corrected_word}</b>?",
+                reply_markup=correction_keyboard(explanation.corrected_word, word),
+            )
         return
 
-    await message.answer(explanation.raw_text, reply_markup=save_word_keyboard(word))
+    if already_saved:
+        await message.answer(f"{explanation.raw_text}\n\nℹ️ Это слово уже есть в твоём словаре.")
+        _pending.pop(telegram_id, None)
+    else:
+        await message.answer(explanation.raw_text, reply_markup=save_word_keyboard(word))
 
 
 @router.callback_query(F.data.startswith("correct_yes:"))

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.user import User
@@ -67,23 +67,41 @@ async def delete_word(session: AsyncSession, word_id: int, user_id: int) -> bool
     return True
 
 
+async def word_exists(session: AsyncSession, user_id: int, word: str) -> bool:
+    """Check if a word already exists in the user's dictionary (case-insensitive)."""
+    result = await session.execute(
+        select(Word.id).where(
+            Word.user_id == user_id,
+            func.lower(Word.word) == word.lower(),
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def get_words_for_review(
     session: AsyncSession,
     user_id: int,
     limit: int = 5,
     exclude_word_ids: list[int] | None = None,
 ) -> list[Word]:
-    """Get words that need review, prioritizing least reviewed and oldest.
+    """Get words that need review, prioritizing low accuracy and least reviewed.
 
-    Uses random() to shuffle words with the same priority so quizzes don't repeat.
+    Priority order:
+    1. Never reviewed words first (last_reviewed_at IS NULL)
+    2. Low accuracy words (correct_count / review_count ASC)
+    3. Oldest reviewed words
+    4. Random tie-breaking
     """
+    safe_review_count = case((Word.review_count > 0, Word.review_count), else_=1)
+    accuracy = Word.correct_count * 1.0 / safe_review_count
     query = select(Word).where(Word.user_id == user_id)
     if exclude_word_ids:
         query = query.where(Word.id.notin_(exclude_word_ids))
     result = await session.execute(
         query.order_by(
             Word.last_reviewed_at.asc().nulls_first(),
-            Word.correct_count.asc(),
+            accuracy.asc(),
+            Word.last_reviewed_at.asc(),
             func.random(),
         ).limit(limit)
     )

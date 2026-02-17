@@ -48,3 +48,12 @@ def onboarding_next_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def onboarding_quiz_keyboard(options: list[str]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=option, callback_data=f"ob_answer:{i}")]
+            for i, option in enumerate(options)
+        ]
+    )

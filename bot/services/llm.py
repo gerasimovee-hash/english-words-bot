@@ -186,6 +186,91 @@ def format_explanation(
     return "\n".join(lines)
 
 
+DISTRACTORS_PROMPT = """\
+You are an English language tutor. Given an English word and its correct Russian \
+translation, generate {count} WRONG but plausible Russian translations (distractors).
+
+The distractors should:
+- Be real Russian words (nouns, verbs, adjectives as appropriate)
+- Be somewhat related or similar-sounding to the correct translation, but clearly wrong
+- Be the same part of speech as the correct translation when possible
+- NOT be synonyms of the correct translation
+
+Word: {word}
+Correct translation: {correct_translation}
+
+Respond ONLY with a JSON array of {count} strings, for example:
+["неправильный1", "неправильный2", "неправильный3"]
+"""
+
+
+async def generate_distractors(word: str, correct_translation: str, count: int = 3) -> list[str]:
+    """Generate plausible wrong translations for a quiz."""
+    prompt = DISTRACTORS_PROMPT.format(
+        word=word, correct_translation=correct_translation, count=count
+    )
+
+    async with GigaChat(
+        credentials=settings.gigachat_credentials,
+        model="GigaChat-2-Max",
+        scope="GIGACHAT_API_PERS",
+        verify_ssl_certs=False,
+    ) as client:
+        response = await client.achat(
+            Chat(
+                messages=[
+                    Messages(role=MessagesRole.USER, content=prompt),
+                ],
+                temperature=0.7,
+            )
+        )
+
+    content = response.choices[0].message.content or "[]"
+    parsed = _parse_json_array(content)
+    if len(parsed) >= count:
+        return parsed[:count]
+    # Fallback if LLM returned too few
+    fallback = ["ошибка", "неизвестно", "другое"]
+    while len(parsed) < count:
+        parsed.append(fallback[len(parsed) % len(fallback)])
+    return parsed
+
+
+def _parse_json_array(text: str) -> list[str]:
+    """Extract and parse a JSON array from LLM response."""
+    if "```" in text:
+        lines = text.split("\n")
+        inside = False
+        json_lines = []
+        for line in lines:
+            if line.strip().startswith("```"):
+                inside = not inside
+                continue
+            if inside:
+                json_lines.append(line)
+        if json_lines:
+            text = "\n".join(json_lines)
+
+    try:
+        result = json.loads(text)
+        if isinstance(result, list):
+            return [s for s in result if isinstance(s, str)]
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end != -1:
+        try:
+            result = json.loads(text[start : end + 1])
+            if isinstance(result, list):
+                return [s for s in result if isinstance(s, str)]
+        except json.JSONDecodeError:
+            pass
+
+    return []
+
+
 def _parse_json(text: str) -> dict:
     """Extract and parse JSON from LLM response, handling markdown fences and extra text."""
     # Strip markdown code fences

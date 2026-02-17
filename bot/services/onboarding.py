@@ -1,7 +1,13 @@
 import logging
+import random
 from dataclasses import dataclass, field
 
-from bot.services.llm import generate_random_words
+from bot.services.llm import (
+    WordExplanation,
+    explain_word,
+    generate_distractors,
+    generate_random_words,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +20,9 @@ class OnboardingSession:
     shown_words: list[str] = field(default_factory=list)
     word_bank: list[str] = field(default_factory=list)
     current_word: str | None = None
+    current_options: list[str] = field(default_factory=list)
+    correct_index: int = 0
+    current_explanation: WordExplanation | None = None
 
 
 _onboarding_sessions: dict[int, OnboardingSession] = {}
@@ -45,4 +54,47 @@ async def get_next_word(session: OnboardingSession) -> str | None:
     word = session.word_bank.pop(0)
     session.shown_words.append(word)
     session.current_word = word
+    session.current_options = []
+    session.correct_index = 0
+    session.current_explanation = None
     return word
+
+
+async def get_word_with_options(
+    session: OnboardingSession,
+) -> dict | None:
+    """Get current word with quiz options (correct translation + distractors)."""
+    if not session.current_word:
+        return None
+
+    word = session.current_word
+
+    try:
+        explanation = await explain_word(word)
+    except Exception:
+        logger.exception("Failed to explain word for onboarding quiz: %s", word)
+        return None
+
+    session.current_explanation = explanation
+    correct_translation = explanation.translation
+
+    try:
+        distractors = await generate_distractors(word, correct_translation, count=3)
+    except Exception:
+        logger.exception("Failed to generate distractors for: %s", word)
+        distractors = ["ошибка", "неизвестно", "другое"]
+
+    options = [correct_translation] + distractors
+    random.shuffle(options)
+    correct_index = options.index(correct_translation)
+
+    session.current_options = options
+    session.correct_index = correct_index
+
+    return {
+        "word": word,
+        "correct": correct_translation,
+        "options": options,
+        "correct_index": correct_index,
+        "explanation": explanation,
+    }
