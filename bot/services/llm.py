@@ -29,15 +29,20 @@ Given the word/phrase, provide:
 2. "translation" — the most common Russian translation
 3. "translations" — a list of 2-4 different Russian translations (synonyms),
    from most common to least common
-4. "meanings" — a list of different meanings with short explanations in Russian
-5. "examples" — 2-3 example sentences in English with Russian translations
-6. "collocations" — common collocations and fixed expressions that use this word, with translations
+4. "distractors" — a list of exactly 3 WRONG but plausible Russian translations
+   that could be confused with the correct one. They must NOT be synonyms of
+   the correct translation. They should be real Russian words of the same part
+   of speech when possible.
+5. "meanings" — a list of different meanings with short explanations in Russian
+6. "examples" — 2-3 example sentences in English with Russian translations
+7. "collocations" — common collocations and fixed expressions that use this word, with translations
 
 Respond ONLY with valid JSON in this exact format:
 {
   "corrected_word": "corrected spelling or same word",
   "translation": "основной перевод",
   "translations": ["перевод 1", "перевод 2", "перевод 3"],
+  "distractors": ["неправильный 1", "неправильный 2", "неправильный 3"],
   "meanings": [
     {"meaning": "значение 1", "explanation": "пояснение на русском"},
     {"meaning": "значение 2", "explanation": "пояснение на русском"}
@@ -56,6 +61,7 @@ Respond ONLY with valid JSON in this exact format:
 class WordExplanation:
     translation: str
     translations: list[str]
+    distractors: list[str]
     corrected_word: str | None
     meanings: list[dict[str, str]]
     examples: list[dict[str, str]]
@@ -132,6 +138,9 @@ async def explain_word(word: str) -> WordExplanation:
     translations = data.get("translations", [translation])
     if not translations:
         translations = [translation]
+    distractors = data.get("distractors", [])
+    if not isinstance(distractors, list):
+        distractors = []
     corrected_word_raw = data.get("corrected_word", word)
     corrected_word = (
         corrected_word_raw
@@ -148,6 +157,7 @@ async def explain_word(word: str) -> WordExplanation:
     return WordExplanation(
         translation=translation,
         translations=translations,
+        distractors=distractors,
         corrected_word=corrected_word,
         meanings=meanings,
         examples=examples,

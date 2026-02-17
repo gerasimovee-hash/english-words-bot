@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from bot.services.llm import (
     WordExplanation,
     explain_word,
-    generate_distractors,
     generate_random_words,
 )
 
@@ -63,7 +62,10 @@ async def get_next_word(session: OnboardingSession) -> str | None:
 async def get_word_with_options(
     session: OnboardingSession,
 ) -> dict | None:
-    """Get current word with quiz options (correct translation + distractors)."""
+    """Get current word with quiz options (correct translation + distractors).
+
+    Uses distractors from the explain_word response (single LLM call).
+    """
     if not session.current_word:
         return None
 
@@ -78,11 +80,11 @@ async def get_word_with_options(
     session.current_explanation = explanation
     correct_translation = explanation.translation
 
-    try:
-        distractors = await generate_distractors(word, correct_translation, count=3)
-    except Exception:
-        logger.exception("Failed to generate distractors for: %s", word)
-        distractors = ["ошибка", "неизвестно", "другое"]
+    distractors = explanation.distractors[:3]
+    # Fallback if LLM returned too few distractors
+    fallback = ["ошибка", "неизвестно", "другое"]
+    while len(distractors) < 3:
+        distractors.append(fallback[len(distractors)])
 
     options = [correct_translation] + distractors
     random.shuffle(options)

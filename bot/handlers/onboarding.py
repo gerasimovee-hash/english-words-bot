@@ -38,6 +38,10 @@ async def on_self_add(callback: CallbackQuery) -> None:
 
 async def _show_quiz(callback: CallbackQuery, ob_session) -> None:  # noqa: ANN001
     """Helper to show a quiz question for the current word."""
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"⏳ <b>{ob_session.current_word}</b> — загружаю варианты...",
+    )
+
     quiz_data = await get_word_with_options(ob_session)
 
     if not quiz_data:
@@ -106,18 +110,17 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
         await callback.message.edit_text(  # type: ignore[union-attr]
             "✅ Верно! Значит ты знаешь это слово.",
         )
-        # Show next quiz question as a new message
-        await callback.message.answer(  # type: ignore[union-attr]
-            f"Как переводится <b>{word}</b>?",
+        loading_msg = await callback.message.answer(  # type: ignore[union-attr]
+            f"⏳ <b>{word}</b> — загружаю варианты...",
         )
         quiz_data = await get_word_with_options(ob_session)
         if quiz_data:
-            await callback.message.answer(  # type: ignore[union-attr]
+            await loading_msg.edit_text(
                 f"Как переводится <b>{quiz_data['word']}</b>?",
                 reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
             )
         else:
-            await callback.message.answer(  # type: ignore[union-attr]
+            await loading_msg.edit_text(
                 f"Не удалось подготовить вопрос для <b>{word}</b>.",
                 reply_markup=onboarding_next_keyboard(),
             )
