@@ -10,7 +10,6 @@ from bot.keyboards.onboarding import (
     onboarding_quiz_keyboard,
 )
 from bot.services.dictionary import add_word, get_or_create_user
-from bot.services.llm import explain_word
 from bot.services.onboarding import (
     create_session,
     get_next_word_with_options,
@@ -97,49 +96,25 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
             reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
         )
     else:
-        # User doesn't know — fetch explanation via LLM and save
+        # User doesn't know — save word from bank instantly (no LLM)
         word = ob_session.current_word
         correct_answer = ob_session.current_options[ob_session.correct_index]
 
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
-            f"⏳ Загружаю объяснение для <b>{word}</b>...",
+        await add_word(
+            session=session,
+            user_id=ob_session.user_id,
+            word=word,
+            translation=correct_answer,
+            explanation="",
         )
-
-        try:
-            explanation = await explain_word(word)
-        except Exception:
-            logger.exception("Failed to explain word during onboarding: %s", word)
-            explanation = None
-
-        if explanation:
-            display_word = explanation.corrected_word or word
-            await add_word(
-                session=session,
-                user_id=ob_session.user_id,
-                word=display_word,
-                translation=explanation.translation,
-                explanation=explanation.raw_text,
-                translations=explanation.translations,
-            )
-        else:
-            display_word = word
-            await add_word(
-                session=session,
-                user_id=ob_session.user_id,
-                word=word,
-                translation=correct_answer,
-                explanation="",
-            )
 
         ob_session.unknown_count += 1
         remaining = ob_session.target_unknown - ob_session.unknown_count
-        translation = explanation.translation if explanation else correct_answer
 
         if ob_session.unknown_count >= ob_session.target_unknown:
             await callback.message.edit_text(  # type: ignore[union-attr]
                 f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
-                f"<b>{display_word}</b> — {translation}\n"
+                f"<b>{word}</b> — {correct_answer}\n"
                 f"Сохранено! ({ob_session.unknown_count}/{ob_session.target_unknown})\n\n"
                 f"🎉 Отлично! Собрано {ob_session.target_unknown} слов в твой словарь. "
                 "Теперь я буду присылать квизы для закрепления!"
@@ -152,7 +127,7 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
         else:
             await callback.message.edit_text(  # type: ignore[union-attr]
                 f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
-                f"<b>{display_word}</b> — {translation}\n"
+                f"<b>{word}</b> — {correct_answer}\n"
                 f"Сохранено! ({ob_session.unknown_count}/{ob_session.target_unknown})\n\n"
                 f"Осталось найти ещё {remaining} незнакомых слов.",
                 reply_markup=onboarding_next_keyboard(),
