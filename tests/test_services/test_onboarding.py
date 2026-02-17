@@ -1,9 +1,7 @@
-from unittest.mock import AsyncMock, patch
-
 from bot.services.onboarding import (
     OnboardingSession,
     create_session,
-    get_next_word,
+    get_next_word_with_options,
     get_session,
     remove_session,
 )
@@ -26,50 +24,37 @@ def test_remove_nonexistent_session():
     remove_session(999)  # should not raise
 
 
-async def test_get_next_word_from_bank():
-    session = OnboardingSession(
-        user_id=1,
-        word_bank=["hello", "world", "test"],
-    )
+def test_get_next_word_with_options():
+    session = OnboardingSession(user_id=1)
 
-    word = await get_next_word(session)
-    assert word == "hello"
-    assert word in session.shown_words
-    assert session.current_word == "hello"
-    assert len(session.word_bank) == 2
-
-
-async def test_get_next_word_fetches_from_llm():
-    session = OnboardingSession(user_id=1, word_bank=[])
-
-    with patch(
-        "bot.services.onboarding.generate_random_words",
-        new_callable=AsyncMock,
-        return_value=["apple", "banana", "cherry"],
-    ):
-        word = await get_next_word(session)
-
-    assert word == "apple"
-    assert session.current_word == "apple"
-    assert "banana" in session.word_bank
-    assert "cherry" in session.word_bank
+    result = get_next_word_with_options(session)
+    assert result is not None
+    assert "word" in result
+    assert "correct" in result
+    assert "options" in result
+    assert len(result["options"]) == 4
+    assert result["correct"] in result["options"]
+    assert result["word"] in session.shown_words
+    assert session.current_word == result["word"]
 
 
-async def test_get_next_word_returns_none_when_empty():
-    session = OnboardingSession(user_id=1, word_bank=[])
+def test_get_next_word_options_shuffled():
+    """Options should contain the correct answer among distractors."""
+    session = OnboardingSession(user_id=1)
 
-    with patch(
-        "bot.services.onboarding.generate_random_words",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        word = await get_next_word(session)
-
-    assert word is None
+    result = get_next_word_with_options(session)
+    assert result is not None
+    assert result["correct_index"] == result["options"].index(result["correct"])
 
 
 def test_session_tracks_shown_words():
-    session = create_session(telegram_id=222, user_id=2)
-    session.word_bank = ["a", "b", "c"]
-    # Clean up
-    remove_session(222)
+    session = OnboardingSession(user_id=1)
+
+    words = set()
+    for _ in range(5):
+        result = get_next_word_with_options(session)
+        assert result is not None
+        words.add(result["word"])
+
+    assert len(words) == 5  # all unique
+    assert len(session.shown_words) == 5

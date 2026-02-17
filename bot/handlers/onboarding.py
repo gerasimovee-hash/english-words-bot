@@ -10,11 +10,11 @@ from bot.keyboards.onboarding import (
     onboarding_quiz_keyboard,
 )
 from bot.services.dictionary import add_word, get_or_create_user
+from bot.services.llm import explain_word
 from bot.services.onboarding import (
     create_session,
-    get_next_word,
+    get_next_word_with_options,
     get_session,
-    get_word_with_options,
     remove_session,
 )
 
@@ -36,26 +36,8 @@ async def on_self_add(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-async def _show_quiz(callback: CallbackQuery, ob_session) -> None:  # noqa: ANN001
-    """Helper to show a quiz question for the current word."""
-    await callback.message.edit_text(  # type: ignore[union-attr]
-        f"⏳ <b>{ob_session.current_word}</b> — загружаю варианты...",
-    )
-
-    quiz_data = await get_word_with_options(ob_session)
-
-    if not quiz_data:
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            f"Не удалось подготовить вопрос для слова "
-            f"<b>{ob_session.current_word}</b>. Пропускаем.",
-            reply_markup=onboarding_next_keyboard(),
-        )
-        return
-
-    await callback.message.edit_text(  # type: ignore[union-attr]
-        f"Как переводится <b>{quiz_data['word']}</b>?",
-        reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
-    )
+def _format_quiz_message(word: str) -> str:
+    return f"Как переводится <b>{word}</b>?"
 
 
 @router.callback_query(F.data == "onboard_test")
@@ -64,9 +46,9 @@ async def on_test_start(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await get_or_create_user(session, telegram_id)
 
     ob_session = create_session(telegram_id, user.id)
-    word = await get_next_word(ob_session)
+    quiz_data = get_next_word_with_options(ob_session)
 
-    if not word:
+    if not quiz_data:
         await callback.message.edit_text(  # type: ignore[union-attr]
             "Не удалось загрузить слова. Попробуй позже или отправь слово сам."
         )
@@ -74,7 +56,10 @@ async def on_test_start(callback: CallbackQuery, session: AsyncSession) -> None:
         await callback.answer()
         return
 
-    await _show_quiz(callback, ob_session)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _format_quiz_message(quiz_data["word"]),
+        reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
+    )
     await callback.answer()
 
 
@@ -91,9 +76,9 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
     is_correct = answer_index == ob_session.correct_index
 
     if is_correct:
-        # User knows this word — move to next
-        word = await get_next_word(ob_session)
-        if not word:
+        # User knows this word — show next instantly
+        quiz_data = get_next_word_with_options(ob_session)
+        if not quiz_data:
             await callback.message.edit_text(  # type: ignore[union-attr]
                 "✅ Верно!\n\n"
                 "Слова закончились! Ты знаешь все предложенные слова. "
@@ -108,48 +93,53 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
             return
 
         await callback.message.edit_text(  # type: ignore[union-attr]
-            "✅ Верно! Значит ты знаешь это слово.",
+            f"✅ Верно!\n\n{_format_quiz_message(quiz_data['word'])}",
+            reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
         )
-        loading_msg = await callback.message.answer(  # type: ignore[union-attr]
-            f"⏳ <b>{word}</b> — загружаю варианты...",
+    else:
+        # User doesn't know — fetch explanation via LLM and save
+        word = ob_session.current_word
+        correct_answer = ob_session.current_options[ob_session.correct_index]
+
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
+            f"⏳ Загружаю объяснение для <b>{word}</b>...",
         )
-        quiz_data = await get_word_with_options(ob_session)
-        if quiz_data:
-            await loading_msg.edit_text(
-                f"Как переводится <b>{quiz_data['word']}</b>?",
-                reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
+
+        try:
+            explanation = await explain_word(word)
+        except Exception:
+            logger.exception("Failed to explain word during onboarding: %s", word)
+            explanation = None
+
+        if explanation:
+            display_word = explanation.corrected_word or word
+            await add_word(
+                session=session,
+                user_id=ob_session.user_id,
+                word=display_word,
+                translation=explanation.translation,
+                explanation=explanation.raw_text,
+                translations=explanation.translations,
             )
         else:
-            await loading_msg.edit_text(
-                f"Не удалось подготовить вопрос для <b>{word}</b>.",
-                reply_markup=onboarding_next_keyboard(),
+            display_word = word
+            await add_word(
+                session=session,
+                user_id=ob_session.user_id,
+                word=word,
+                translation=correct_answer,
+                explanation="",
             )
-    else:
-        # User doesn't know — save word and show explanation
-        explanation = ob_session.current_explanation
-        if not explanation:
-            await callback.answer("Ошибка. Попробуй ещё раз.")
-            return
-
-        display_word = explanation.corrected_word or ob_session.current_word
-        await add_word(
-            session=session,
-            user_id=ob_session.user_id,
-            word=display_word,
-            translation=explanation.translation,
-            explanation=explanation.raw_text,
-            translations=explanation.translations,
-        )
 
         ob_session.unknown_count += 1
         remaining = ob_session.target_unknown - ob_session.unknown_count
-
-        correct_answer = ob_session.current_options[ob_session.correct_index]
+        translation = explanation.translation if explanation else correct_answer
 
         if ob_session.unknown_count >= ob_session.target_unknown:
             await callback.message.edit_text(  # type: ignore[union-attr]
                 f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
-                f"<b>{display_word}</b> — {explanation.translation}\n"
+                f"<b>{display_word}</b> — {translation}\n"
                 f"Сохранено! ({ob_session.unknown_count}/{ob_session.target_unknown})\n\n"
                 f"🎉 Отлично! Собрано {ob_session.target_unknown} слов в твой словарь. "
                 "Теперь я буду присылать квизы для закрепления!"
@@ -162,7 +152,7 @@ async def on_quiz_answer(callback: CallbackQuery, session: AsyncSession) -> None
         else:
             await callback.message.edit_text(  # type: ignore[union-attr]
                 f"❌ Правильный ответ: <b>{correct_answer}</b>\n\n"
-                f"<b>{display_word}</b> — {explanation.translation}\n"
+                f"<b>{display_word}</b> — {translation}\n"
                 f"Сохранено! ({ob_session.unknown_count}/{ob_session.target_unknown})\n\n"
                 f"Осталось найти ещё {remaining} незнакомых слов.",
                 reply_markup=onboarding_next_keyboard(),
@@ -180,8 +170,8 @@ async def on_next(callback: CallbackQuery) -> None:
         await callback.answer("Сессия не найдена. Начни заново с /start.")
         return
 
-    word = await get_next_word(ob_session)
-    if not word:
+    quiz_data = get_next_word_with_options(ob_session)
+    if not quiz_data:
         await callback.message.edit_text(  # type: ignore[union-attr]
             "Слова закончились! Попробуй отправить незнакомое слово сам."
         )
@@ -193,5 +183,8 @@ async def on_next(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    await _show_quiz(callback, ob_session)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _format_quiz_message(quiz_data["word"]),
+        reply_markup=onboarding_quiz_keyboard(quiz_data["options"]),
+    )
     await callback.answer()

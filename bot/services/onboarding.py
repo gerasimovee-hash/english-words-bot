@@ -2,11 +2,8 @@ import logging
 import random
 from dataclasses import dataclass, field
 
-from bot.services.llm import (
-    WordExplanation,
-    explain_word,
-    generate_random_words,
-)
+from bot.services.llm import WordExplanation
+from bot.services.word_bank import get_random_words
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +14,11 @@ class OnboardingSession:
     target_unknown: int = 10
     unknown_count: int = 0
     shown_words: list[str] = field(default_factory=list)
-    word_bank: list[str] = field(default_factory=list)
+    word_bank: list[dict] = field(default_factory=list)
     current_word: str | None = None
     current_options: list[str] = field(default_factory=list)
     correct_index: int = 0
+    current_translation: str | None = None
     current_explanation: WordExplanation | None = None
 
 
@@ -41,62 +39,37 @@ def remove_session(telegram_id: int) -> None:
     _onboarding_sessions.pop(telegram_id, None)
 
 
-async def get_next_word(session: OnboardingSession) -> str | None:
-    """Get the next word from the bank, fetching more from LLM if needed."""
+def get_next_word_with_options(session: OnboardingSession) -> dict | None:
+    """Get next word with quiz options instantly from pre-built bank.
+
+    No LLM calls — everything is pre-defined.
+    """
     if not session.word_bank:
-        new_words = await generate_random_words(count=20, exclude=session.shown_words)
-        session.word_bank.extend(new_words)
+        session.word_bank = get_random_words(count=30, exclude=session.shown_words)
 
     if not session.word_bank:
         return None
 
-    word = session.word_bank.pop(0)
+    entry = session.word_bank.pop(0)
+    word = entry["word"]
+    correct = entry["translation"]
+    distractors = list(entry["distractors"])
+
     session.shown_words.append(word)
     session.current_word = word
-    session.current_options = []
-    session.correct_index = 0
+    session.current_translation = correct
     session.current_explanation = None
-    return word
 
-
-async def get_word_with_options(
-    session: OnboardingSession,
-) -> dict | None:
-    """Get current word with quiz options (correct translation + distractors).
-
-    Uses distractors from the explain_word response (single LLM call).
-    """
-    if not session.current_word:
-        return None
-
-    word = session.current_word
-
-    try:
-        explanation = await explain_word(word)
-    except Exception:
-        logger.exception("Failed to explain word for onboarding quiz: %s", word)
-        return None
-
-    session.current_explanation = explanation
-    correct_translation = explanation.translation
-
-    distractors = explanation.distractors[:3]
-    # Fallback if LLM returned too few distractors
-    fallback = ["ошибка", "неизвестно", "другое"]
-    while len(distractors) < 3:
-        distractors.append(fallback[len(distractors)])
-
-    options = [correct_translation] + distractors
+    options = [correct] + distractors
     random.shuffle(options)
-    correct_index = options.index(correct_translation)
+    correct_index = options.index(correct)
 
     session.current_options = options
     session.correct_index = correct_index
 
     return {
         "word": word,
-        "correct": correct_translation,
+        "correct": correct,
         "options": options,
         "correct_index": correct_index,
-        "explanation": explanation,
     }
