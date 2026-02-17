@@ -10,8 +10,10 @@ from bot.config import settings
 logger = logging.getLogger(__name__)
 
 RANDOM_WORDS_PROMPT = """\
-Generate a list of {count} random English words at B1-B2 level (intermediate).
+Generate a list of {count} random English words at B2-C1 level (upper-intermediate to advanced).
 The words should be diverse: mix nouns, verbs, adjectives, and adverbs.
+Prefer less common, more challenging vocabulary that an educated
+adult might encounter in books, articles, or academic texts.
 Do NOT include these words: {exclude}
 
 Respond ONLY with a valid JSON array of strings, for example:
