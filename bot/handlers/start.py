@@ -4,7 +4,8 @@ from aiogram.types import Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.keyboards.main import BTN_DICTIONARY, BTN_QUIZ, BTN_STATS, main_keyboard
+from bot.keyboards.donate import donate_keyboard
+from bot.keyboards.main import BTN_DICTIONARY, BTN_DONATE, BTN_QUIZ, BTN_STATS, main_keyboard
 from bot.keyboards.onboarding import onboarding_choice_keyboard
 from bot.models.user import User
 
@@ -71,3 +72,14 @@ async def btn_stats(message: Message, session: AsyncSession) -> None:
     from bot.handlers.dictionary import cmd_stats
 
     await cmd_stats(message, session)
+
+
+@router.message(F.text == BTN_DONATE)
+async def btn_donate(message: Message) -> None:
+    await message.answer(
+        "Это приложение полностью бесплатное — вне зависимости от оплаты! 🙌\n\n"
+        "Но если хочешь поддержать разработчика и показать, "
+        "что бот полезен — можешь отправить донат ⭐\n\n"
+        "Выбери сумму:",
+        reply_markup=donate_keyboard(),
+    )
