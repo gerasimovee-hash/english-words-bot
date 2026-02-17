@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 
 from bot.config import settings
 from bot.db.session import engine
-from bot.handlers import dictionary, quiz, start, word
+from bot.handlers import dictionary, onboarding, quiz, start, word
 from bot.middlewares.db import DbSessionMiddleware
 from bot.scheduler import setup_scheduler
 
@@ -29,6 +29,7 @@ async def main() -> None:
 
     dp.include_routers(
         start.router,
+        onboarding.router,
         quiz.router,
         dictionary.router,
         word.router,  # Must be last — catches all text messages

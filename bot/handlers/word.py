@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.keyboards.main import BUTTON_TEXTS
 from bot.keyboards.word import correction_keyboard, save_word_keyboard
 from bot.services.dictionary import add_word, get_or_create_user
 from bot.services.llm import explain_word
@@ -16,7 +17,7 @@ router = Router()
 _pending: dict[int, dict] = {}
 
 
-@router.message(F.text & ~F.text.startswith("/"))
+@router.message(F.text & ~F.text.startswith("/") & ~F.text.in_(BUTTON_TEXTS))
 async def handle_word(message: Message, session: AsyncSession) -> None:
     word = message.text.strip()  # type: ignore[union-attr]
     if not word or len(word) > 200:

@@ -9,6 +9,16 @@ from bot.config import settings
 
 logger = logging.getLogger(__name__)
 
+RANDOM_WORDS_PROMPT = """\
+Generate a list of {count} random English words at B1-B2 level (intermediate).
+The words should be diverse: mix nouns, verbs, adjectives, and adverbs.
+Do NOT include these words: {exclude}
+
+Respond ONLY with a valid JSON array of strings, for example:
+["word1", "word2", "word3"]
+"""
+
+
 EXPLAIN_PROMPT = """\
 You are an English language tutor helping a Russian-speaking student.
 The student encountered an unfamiliar English word or phrase while reading.
@@ -51,6 +61,51 @@ class WordExplanation:
     examples: list[dict[str, str]]
     collocations: list[dict[str, str]]
     raw_text: str  # Formatted text for display
+
+
+async def generate_random_words(count: int = 20, exclude: list[str] | None = None) -> list[str]:
+    """Generate a batch of random English words at B1-B2 level via LLM."""
+    exclude_str = ", ".join(exclude) if exclude else "none"
+    prompt = RANDOM_WORDS_PROMPT.format(count=count, exclude=exclude_str)
+
+    async with GigaChat(
+        credentials=settings.gigachat_credentials,
+        model="GigaChat-2-Max",
+        scope="GIGACHAT_API_PERS",
+        verify_ssl_certs=False,
+    ) as client:
+        response = await client.achat(
+            Chat(
+                messages=[
+                    Messages(role=MessagesRole.USER, content=prompt),
+                ],
+                temperature=0.9,
+            )
+        )
+
+    content = response.choices[0].message.content or "[]"
+    # Strip markdown fences if present
+    if "```" in content:
+        lines = content.split("\n")
+        json_lines = []
+        inside = False
+        for line in lines:
+            if line.strip().startswith("```"):
+                inside = not inside
+                continue
+            if inside:
+                json_lines.append(line)
+        if json_lines:
+            content = "\n".join(json_lines)
+
+    try:
+        words = json.loads(content)
+        if isinstance(words, list):
+            return [w for w in words if isinstance(w, str)]
+    except json.JSONDecodeError:
+        logger.error("Failed to parse random words response: %s", content)
+
+    return []
 
 
 async def explain_word(word: str) -> WordExplanation:

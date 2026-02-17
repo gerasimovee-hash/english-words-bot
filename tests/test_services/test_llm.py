@@ -1,4 +1,6 @@
-from bot.services.llm import explain_word, format_explanation
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from bot.services.llm import explain_word, format_explanation, generate_random_words
 
 
 async def test_explain_word(mock_gigachat):
@@ -14,9 +16,50 @@ async def test_explain_word(mock_gigachat):
     mock_gigachat.assert_called_once()
 
 
+async def test_generate_random_words():
+    """Test that generate_random_words returns a list of words."""
+    mock_message = MagicMock()
+    mock_message.content = '["abandon", "crucial", "eager", "forecast", "genuine"]'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    mock_client = AsyncMock()
+    mock_client.achat = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("bot.services.llm.GigaChat", return_value=mock_client):
+        result = await generate_random_words(count=5, exclude=["hello"])
+
+    assert len(result) == 5
+    assert "abandon" in result
+    assert "crucial" in result
+
+
+async def test_generate_random_words_with_markdown_fences():
+    """Test parsing when LLM wraps response in markdown code fences."""
+    mock_message = MagicMock()
+    mock_message.content = '```json\n["word1", "word2", "word3"]\n```'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    mock_client = AsyncMock()
+    mock_client.achat = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("bot.services.llm.GigaChat", return_value=mock_client):
+        result = await generate_random_words(count=3)
+
+    assert result == ["word1", "word2", "word3"]
+
+
 async def test_explain_word_with_correction(mock_gigachat):
     """Test that corrected_word is set when LLM returns a different spelling."""
-    from unittest.mock import MagicMock
 
     # Override mock to return corrected spelling
     mock_instance = mock_gigachat.return_value

@@ -1,9 +1,11 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.keyboards.main import BTN_DICTIONARY, BTN_QUIZ, BTN_STATS, main_keyboard
+from bot.keyboards.onboarding import onboarding_choice_keyboard
 from bot.models.user import User
 
 router = Router()
@@ -22,19 +24,15 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         await session.commit()
         await message.answer(
             "👋 Привет! Я помогу тебе учить английские слова.\n\n"
-            "Просто отправь мне незнакомое слово или фразу на английском, "
-            "и я объясню значение, покажу варианты перевода и примеры.\n\n"
             "Слова сохраняются в твой личный словарь, "
             "а я буду присылать тесты для закрепления.\n\n"
-            "Команды:\n"
-            "/words — твой словарь\n"
-            "/stats — статистика\n"
-            "/quiz — начать тест\n"
-            "/help — помощь"
+            "Как хочешь начать?",
+            reply_markup=onboarding_choice_keyboard(),
         )
     else:
         await message.answer(
-            "С возвращением! Отправь мне слово на английском, и я помогу его выучить. 📚"
+            "С возвращением! Отправь мне слово на английском, и я помогу его выучить. 📚",
+            reply_markup=main_keyboard(),
         )
 
 
@@ -52,3 +50,24 @@ async def cmd_help(message: Message) -> None:
         "/quiz — начать тест прямо сейчас\n"
         "/help — эта справка"
     )
+
+
+@router.message(F.text == BTN_DICTIONARY)
+async def btn_dictionary(message: Message, session: AsyncSession) -> None:
+    from bot.handlers.dictionary import cmd_words
+
+    await cmd_words(message, session)
+
+
+@router.message(F.text == BTN_QUIZ)
+async def btn_quiz(message: Message, session: AsyncSession) -> None:
+    from bot.handlers.quiz import cmd_quiz
+
+    await cmd_quiz(message, session)
+
+
+@router.message(F.text == BTN_STATS)
+async def btn_stats(message: Message, session: AsyncSession) -> None:
+    from bot.handlers.dictionary import cmd_stats
+
+    await cmd_stats(message, session)
