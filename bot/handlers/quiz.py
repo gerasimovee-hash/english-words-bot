@@ -84,7 +84,7 @@ async def cmd_quiz(message: Message, session: AsyncSession) -> None:
 
     # Remove any existing session
     remove_session(telegram_id)
-    create_session(telegram_id, user.id, total_questions=5)
+    create_session(telegram_id, user.id, total_questions=10)
 
     sent = await send_quiz_question(session, telegram_id, send_func=message.answer)
     if not sent:
